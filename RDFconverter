@@ -1,0 +1,185 @@
+__author__ = '3cixty team'
+
+#some libraries first
+import os
+import csv
+import pyproj
+import hashlib
+from rdflib import URIRef, BNode, Literal, Namespace, plugin, Graph, ConjunctiveGraph
+from rdflib.namespace import RDF, FOAF, RDFS
+from rdflib.store import Store
+
+
+def Readcsv(inputfile):
+     if os.path.exists(inputfile):
+          f=open(inputfile);
+          csv_f=csv.reader(f,delimiter=',');
+          return csv_f;
+     else:
+          print "No such csv file !"
+          return
+
+
+def ReadRDF(outputfile):
+    g=rdflib.Graph()
+    g.parse(outputfile,format='turtle')
+    print len(g)
+
+def ConvertProj(lon,lat):
+    Bng = pyproj.Proj(init='epsg:27700')
+    Wgs84 = pyproj.Proj(init='epsg:4326')
+    wgsLon,wgsLat = pyproj.transform(Bng,Wgs84,lon, lat)
+    return wgsLon,wgsLat
+
+# Define  RDF head
+def DefineRDFPrefixes():
+
+#Vocabularies
+    prefixes = {'schema':'http://schema.org/',
+        'naptan':'http://transport.data.gov.uk/def/naptan/',
+        'owl':'http://www.w3.org/2002/07/owl#',
+        'xsd': 'http://www.w3.org/2001/XMLSchema#',
+        'rdfs': 'http://www.w3.org/2000/01/rdf-schema#',
+        'vcard': 'http://www.w3.org/2006/vcard/ns#',
+        'locationOnt': 'http://data.linkedevents.org/def/location#',
+        'geom': 'http://geovocab.org/geometry#',
+        'unknown': 'http://data.linkedevents.org/def/unknown#',
+        'geo': 'http://www.w3.org/2003/01/geo/wgs84_pos#',
+        'geosparql': 'http://www.opengis.net/ont/geosparql#',
+        'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+        'transit': 'http://vocab.org/transit/terms/',
+        'dcterms': 'http://purl.org/dc/terms/',
+        'dul': 'http://ontologydesignpatterns.org/ont/dul/DUL.owl#',
+        'locn': 'http://www.w3.org/ns/locn#',
+        'foaf': 'http://xmlns.com/foaf/0.1/',
+        'dc': 'http://purl.org/dc/elements/1.1/',
+        'trans': 'http://vocab.linkeddata.es/datosabiertos/def/urbanismo-infraestructuras/Transporte#'}
+    return prefixes;
+
+def BusStopEntry(stopId):
+    BustStop = URIRef("http://data.linkedevents.org/transit/London/stop/" + stopId)
+    return BustStop
+
+def GeometryEntry(UUID):
+    Geometry = URIRef(('http://data.linkedevents.org/location/%s/geometry') % UUID)
+    return Geometry
+
+def AddressEntry(UUID):
+    Address = URIRef(('http://data.linkedevents.org/location/%s/address') % UUID)
+    return Address
+
+def BindingPrefixes(g,prefixes):
+    for index in prefixes:
+        g.bind(index, prefixes[index])
+    return g
+
+def WriteRDF(row,g,outputfile):
+    key=row[0]
+    if  key!="NONE":
+
+        # Convert Bng to Wgs84
+        stopLon,stopLat=ConvertProj(row[4],row[5])
+
+        # Generate hash UUID
+        UUID=hashlib.sha1(row[2]).hexdigest()
+
+        schema = Namespace("http://schema.org/")
+        naptan = Namespace("http://transport.data.gov.uk/def/naptan/")
+        dc = Namespace("http://purl.org/dc/elements/1.1/")
+        geo = Namespace("http://www.w3.org/2003/01/geo/wgs84_pos#")
+        geosparql = Namespace("http://www.opengis.net/ont/geosparql#")
+        trans = Namespace("http://vocab.linkeddata.es/datosabiertos/def/urbanismo-infraestructuras/Transporte#")
+        xsd = Namespace("http://www.w3.org/2001/XMLSchema#")
+        rdfs = Namespace("http://www.w3.org/2000/01/rdf-schema#")
+        vcard = Namespace("http://www.w3.org/2006/vcard/ns#")
+        locationOnt = Namespace("http://data.linkedevents.org/def/location#")
+        geom = Namespace("http://geovocab.org/geometry#")
+        unknown = Namespace("http://data.linkedevents.org/def/unknown#")
+        owl = Namespace("http://www.w3.org/2002/07/owl#")
+        rdf = Namespace("http://www.w3.org/1999/02/22-rdf-syntax-ns#")
+        transit = Namespace("http://vocab.org/transit/terms/")
+        dcterms = Namespace("http://purl.org/dc/terms/")
+        dul = Namespace("http://ontologydesignpatterns.org/ont/dul/DUL.owl#")
+        locn = Namespace("http://www.w3.org/ns/locn#")
+        foaf = Namespace("http://xmlns.com/foaf/0.1/")
+
+
+        store = plugin.get('IOMemory', Store)()
+        g_relation_1=rdflib.Graph()
+        g_relation_2=rdflib.Graph()
+
+        # Generate N-Triple Store
+
+        # BusStopEntry
+        g.add((BusStopEntry(key), rdf.type, naptan.BusStop))
+        g.add((BusStopEntry(key), rdf.type, dul.Place))
+        g.add((BusStopEntry(key), rdf.type, transit.Stop))
+        g.add((BusStopEntry(key), dc.identifier, Literal(key)))
+        g.add((BusStopEntry(key), geom.geometry, GeometryEntry(UUID)))
+        g.add((BusStopEntry(key), schema.geo, GeometryEntry(UUID)))
+
+        # AddressEntry
+        g.add((AddressEntry(UUID), rdf.type, schema.PostalAddress))
+        g.add((AddressEntry(UUID), rdf.type, dcterms.Location))
+        g.add((AddressEntry(UUID), dcterms.title, stopName))
+        g.add((AddressEntry(UUID), schema.streetAddress, stopAddress))
+        g.add((AddressEntry(UUID), locn.address, stopLocnAddress))
+        g.add((AddressEntry(UUID), schema.addressLocality, stopAddressLocality))
+        g.add((AddressEntry(UUID), locn.adminUnitL12, stopAdminUnitL2))
+
+
+
+        g.add((GeometryEntry(UUID), rdf.type, geo.Point))
+        g.add((GeometryEntry(UUID), geo.long, Literal(stopLon, datatype=xsd.double)))
+        g.add((GeometryEntry(UUID), geo.lat, Literal(stopLat, datatype=xsd.double)))
+        g.add((GeometryEntry(UUID), locn.geometry, Literal(stopGeometry, datatype=geosparql.wktLiteral)))
+
+        # Build relationship
+        g_relation_1.add((BusStopEntry(key), geo.location, BusStopEntry(key)))
+        g_relation_1.add((BusStopEntry(key), transit.route, stopRoute))
+
+        # Build relationship
+        g_relation_2.add((BusStopEntry(key), schema.location, AddressEntry(UUID)))
+        g_relation_2.add((BusStopEntry(key), locn.address, AddressEntry(UUID)))
+        g_relation_2.add((BusStopEntry(key), dc.publisher, stopPublisher))
+        g_relation_2.add((BusStopEntry(key), locationOnt.businessType, stopBusinessType))
+        g_relation_2.add((BusStopEntry(key), rdfs.label, stopLabel))
+
+        rdf_graph = rdflib.ConjunctiveGraph(store)
+
+        rdf_graph.serialize(outputfile,format='turtle')
+
+
+# define main function
+def main():
+
+    # csv filename
+    inputfile="bus-stops-10-06-15.csv";
+
+    # RDF filename
+    outputfile="test.ttl";
+
+    csv=Readcsv(inputfile);
+
+    if csv is not None:
+        g=rdf.Graph()
+
+        # Define Prefixes
+        prefixes=DefineRDFPrefixes()
+
+        # Write Prefixes Head to ttl
+        g=BindingPrefixes(g,prefixes)
+        g.serialize(outputfile,format='turtle')
+
+        # Skip the headers
+        next(csv, None)
+        for row in csv:
+            WriteRDF(row,g,outputfile)
+            #break;
+
+    print "csv file has been converted to RDF turtle successfully !"
+
+
+# define main function interface
+if __name__ == "__main__":
+    main();
