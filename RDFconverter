@@ -4,7 +4,7 @@ __author__ = '3cixty team'
 import os
 import csv
 #import pyproj
-import hashlib
+import uuid
 from rdflib import URIRef, BNode, Literal, Namespace, plugin, Graph, ConjunctiveGraph
 from rdflib.namespace import RDF, FOAF, RDFS
 from rdflib.store import Store
@@ -68,27 +68,28 @@ def AddressEntry(UUID):
     Address = URIRef(('http://data.linkedevents.org/location/%s/address') % UUID)
     return Address
 
+def BusRouteEntry(stopRoute):
+    Route = URIRef(('http://data.linkedevents.org/transit/London/route/%s') % stopRoute)
+    return Route
+
+
 def BindingPrefixes(g,prefixes):
     for index in prefixes:
         g.bind(index, prefixes[index])
     return g
 
-def WriteRDF(row,g):
+def WriteRDF(row,g,g1,store):
     key=row[0]
     if  key!="NONE":
 
         # Convert Bng to Wgs84
         #stopLon,stopLat=ConvertProj(row[4],row[5])
 
-        # Generate hash UUID
-        #UUID=hashlib.sha1(row[2]).hexdigest()
-
         stopLat = "53.35"
         stopLon = "24.93"
         stopGeometry = "POINT (24.93 53.35)"
         stopName=row[3]
-        stopAddress=row[7]
-        UUID="50da1556-b9ad-45e8-92cd-65e12c2dd316"
+        stopRoute=row[6]
 
 
 
@@ -112,44 +113,27 @@ def WriteRDF(row,g):
         locn = Namespace("http://www.w3.org/ns/locn#")
         foaf = Namespace("http://xmlns.com/foaf/0.1/")
 
+
+        # Generate hash UUID
+        UUID=uuid.uuid5(naptan, key)
+
         # Generate N-Triple Store
 
         # BusStopEntry
+        g.add((BusStopEntry(key), rdf.type, transit.Stop))
         g.add((BusStopEntry(key), rdf.type, naptan.BusStop))
         g.add((BusStopEntry(key), rdf.type, dul.Place))
-        g.add((BusStopEntry(key), rdf.type, transit.Stop))
         g.add((BusStopEntry(key), dc.identifier, Literal(key)))
-        g.add((BusStopEntry(key), geom.geometry, GeometryEntry(UUID)))
-        g.add((BusStopEntry(key), schema.geo, GeometryEntry(UUID)))
-
-        # AddressEntry
-        g.add((AddressEntry(UUID), rdf.type, schema.PostalAddress))
-        g.add((AddressEntry(UUID), rdf.type, dcterms.Location))
-        g.add((AddressEntry(UUID), dcterms.title, Literal(stopName)))
-        g.add((AddressEntry(UUID), schema.streetAddress, Literal(stopAddress)))
-        #g.add((AddressEntry(UUID), locn.address, stopLocnAddress))
-        #g.add((AddressEntry(UUID), schema.addressLocality, stopAddressLocality))
-        #g.add((AddressEntry(UUID), locn.adminUnitL12, stopAdminUnitL2))
+        g.add((BusStopEntry(key), geo.location, GeometryEntry(UUID)))
+        g.add((BusStopEntry(key), transit.route, BusRouteEntry(stopRoute)))
 
 
+        g1.add((GeometryEntry(UUID), rdf.type, geo.Point))
+        g1.add((GeometryEntry(UUID), geo.long, Literal(stopLon, datatype=xsd.double)))
+        g1.add((GeometryEntry(UUID), geo.lat, Literal(stopLat, datatype=xsd.double)))
+        g1.add((GeometryEntry(UUID), locn.geometry, Literal(stopGeometry, datatype=geosparql.wktLiteral)))
 
-        g.add((GeometryEntry(UUID), rdf.type, geo.Point))
-        g.add((GeometryEntry(UUID), geo.long, Literal(stopLon, datatype=xsd.double)))
-        g.add((GeometryEntry(UUID), geo.lat, Literal(stopLat, datatype=xsd.double)))
-        g.add((GeometryEntry(UUID), locn.geometry, Literal(stopGeometry, datatype=geosparql.wktLiteral)))
-
-
-        g.add((BusStopEntry(key), geo.location, BusStopEntry(key)))
-        #g.add((BusStopEntry(key), transit.route, stopRoute))
-
-        # Build relationship
-        g.add((BusStopEntry(key), schema.location, AddressEntry(UUID)))
-        g.add((BusStopEntry(key), locn.address, AddressEntry(UUID)))
-        #g.add((BusStopEntry(key), dc.publisher, stopPublisher))
-        #g.add((BusStopEntry(key), locationOnt.businessType, stopBusinessType))
-        #g.add((BusStopEntry(key), rdfs.label, stopLabel))
-
-
+        g = ConjunctiveGraph(store)
 
         return g
 
@@ -168,20 +152,20 @@ def main():
     if csv is not None:
         store = plugin.get('IOMemory', Store)()
         g=Graph(store)
+        g1=Graph(store)
 
-        # Define Prefixes
-        prefixes=DefineRDFPrefixes()
-        g=BindingPrefixes(g,prefixes)
-
-
-        # Skip the headers
+          # Skip the headers
         next(csv, None)
-        for i in range(1000):
-            row=csv.next()
-            g=WriteRDF(row,g)
-            #break;
+        for row in csv:
+            g=WriteRDF(row,g,g1,store)
+            break;
+
+      # Define Prefixes
+        prefixes=DefineRDFPrefixes()
 
         # Write Prefixes Head to ttl
+        g=BindingPrefixes(g,prefixes)
+
 
         g.serialize(outputfile,format='turtle')
 
