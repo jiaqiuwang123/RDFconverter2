@@ -78,7 +78,7 @@ def BindingPrefixes(g,prefixes):
         g.bind(index, prefixes[index])
     return g
 
-def WriteRDF(row,g,g1,store):
+def WriteRDF(row,g):
     key=row[0]
     if  key!="NONE":
 
@@ -126,14 +126,10 @@ def WriteRDF(row,g,g1,store):
         g.add((BusStopEntry(key), dc.identifier, Literal(key)))
         g.add((BusStopEntry(key), geo.location, GeometryEntry(UUID)))
         g.add((BusStopEntry(key), transit.route, BusRouteEntry(stopRoute)))
-
-
-        g1.add((GeometryEntry(UUID), rdf.type, geo.Point))
-        g1.add((GeometryEntry(UUID), geo.long, Literal(stopLon, datatype=xsd.double)))
-        g1.add((GeometryEntry(UUID), geo.lat, Literal(stopLat, datatype=xsd.double)))
-        g1.add((GeometryEntry(UUID), locn.geometry, Literal(stopGeometry, datatype=geosparql.wktLiteral)))
-
-        g = ConjunctiveGraph(store)
+        g.add((GeometryEntry(UUID), rdf.type, geo.Point))
+        g.add((GeometryEntry(UUID), geo.long, Literal(stopLon, datatype=xsd.double)))
+        g.add((GeometryEntry(UUID), geo.lat, Literal(stopLat, datatype=xsd.double)))
+        g.add((GeometryEntry(UUID), locn.geometry, Literal(stopGeometry, datatype=geosparql.wktLiteral)))
 
         return g
 
@@ -152,20 +148,18 @@ def main():
     if csv is not None:
         store = plugin.get('IOMemory', Store)()
         g=Graph(store)
-        g1=Graph(store)
 
-          # Skip the headers
-        next(csv, None)
-        for row in csv:
-            g=WriteRDF(row,g,g1,store)
-            break;
-
-      # Define Prefixes
+        # Define Prefixes
         prefixes=DefineRDFPrefixes()
 
         # Write Prefixes Head to ttl
         g=BindingPrefixes(g,prefixes)
 
+        # Skip the headers
+        next(csv, None)
+        for row in csv:
+            g=WriteRDF(row,g)
+            #break;
 
         g.serialize(outputfile,format='turtle')
 
